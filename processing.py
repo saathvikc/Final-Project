@@ -2,17 +2,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
 
-# =========================
-# Load image
-# =========================
-
-img_path = "sample_spacenet_image.tif"
+img_path = "global_monthly_2018_01_mosaic_L15-0506E-1204N_2027_3374_13.tif"
 img = Image.open(img_path).convert("RGB")
 img = np.asarray(img).astype(np.float32) / 255.0
-
-# =========================
-# 1. Grayscale conversion
-# =========================
 
 def rgb_to_gray(img):
     r = img[:, :, 0]
@@ -21,10 +13,6 @@ def rgb_to_gray(img):
     return 0.299*r + 0.587*g + 0.114*b
 
 gray = rgb_to_gray(img)
-
-# =========================
-# Helper: manual convolution
-# =========================
 
 def convolve2d(image, kernel):
     kh, kw = kernel.shape
@@ -41,9 +29,7 @@ def convolve2d(image, kernel):
 
     return output
 
-# =========================
-# 2. Gaussian blur
-# =========================
+# gaussian blur
 
 def gaussian_kernel(size=5, sigma=1.0):
     ax = np.arange(-(size//2), size//2 + 1)
@@ -57,9 +43,7 @@ def gaussian_kernel(size=5, sigma=1.0):
 g_kernel = gaussian_kernel(size=5, sigma=1.0)
 blurred = convolve2d(gray, g_kernel)
 
-# =========================
-# 3. Canny-style edge detection
-# =========================
+# canny edge detection
 
 # Sobel filters
 Kx = np.array([
@@ -83,9 +67,7 @@ magnitude = magnitude / magnitude.max()
 angle = np.rad2deg(np.arctan2(Gy, Gx))
 angle[angle < 0] += 180
 
-# =========================
 # Non-maximum suppression
-# =========================
 
 def non_max_suppression(mag, angle):
     H, W = mag.shape
@@ -126,9 +108,7 @@ def non_max_suppression(mag, angle):
 
 thin_edges = non_max_suppression(magnitude, angle)
 
-# =========================
-# Double threshold
-# =========================
+# double thresholding
 
 def double_threshold(img, low=0.08, high=0.20):
     strong = 1.0
@@ -146,9 +126,7 @@ def double_threshold(img, low=0.08, high=0.20):
 
 thresholded, weak, strong = double_threshold(thin_edges, low=0.08, high=0.20)
 
-# =========================
-# Edge tracking by hysteresis
-# =========================
+# hysteresis
 
 def hysteresis(img, weak=0.5, strong=1.0):
     H, W = img.shape
@@ -169,9 +147,7 @@ def hysteresis(img, weak=0.5, strong=1.0):
 
 edges = hysteresis(thresholded, weak, strong)
 
-# =========================
-# Display results
-# =========================
+# figures
 
 plt.figure(figsize=(12, 8))
 
@@ -196,4 +172,7 @@ plt.imshow(edges, cmap="gray")
 plt.axis("off")
 
 plt.tight_layout()
+
+plt.savefig("pipeline_output.png", dpi=300, bbox_inches='tight')
+
 plt.show()
