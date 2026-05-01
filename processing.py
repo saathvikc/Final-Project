@@ -147,32 +147,227 @@ def hysteresis(img, weak=0.5, strong=1.0):
 
 edges = hysteresis(thresholded, weak, strong)
 
+# Morphological Closing
+
+def dilate(binary_img, kernel_size=3):
+    pad = kernel_size // 2
+    padded = np.pad(binary_img, pad, mode="constant")
+    output = np.zeros_like(binary_img)
+
+    for i in range(binary_img.shape[0]):
+        for j in range(binary_img.shape[1]):
+            region = padded[i:i+kernel_size, j:j+kernel_size]
+            output[i, j] = 1 if np.any(region == 1) else 0
+
+    return output
+
+
+def erode(binary_img, kernel_size=3):
+    pad = kernel_size // 2
+    padded = np.pad(binary_img, pad, mode="constant")
+    output = np.zeros_like(binary_img)
+
+    for i in range(binary_img.shape[0]):
+        for j in range(binary_img.shape[1]):
+            region = padded[i:i+kernel_size, j:j+kernel_size]
+            output[i, j] = 1 if np.all(region == 1) else 0
+
+    return output
+
+
+def closing(binary_img, kernel_size=3):
+    return erode(dilate(binary_img, kernel_size), kernel_size)
+
+
+closed = closing(edges, kernel_size=5)
+
+# Skeletonization
+
+def skeletonize(binary_img):
+    img = binary_img.copy().astype(np.uint8)
+    changed = True
+
+    while changed:
+        changed = False
+        pixels_to_remove = []
+
+        # sub-iteration 1
+        for i in range(1, img.shape[0] - 1):
+            for j in range(1, img.shape[1] - 1):
+                P = [
+                    img[i, j],
+                    img[i-1, j],
+                    img[i-1, j+1],
+                    img[i, j+1],
+                    img[i+1, j+1],
+                    img[i+1, j],
+                    img[i+1, j-1],
+                    img[i, j-1],
+                    img[i-1, j-1]
+                ]
+
+                if P[0] != 1:
+                    continue
+
+                neighbors = sum(P[1:])
+                transitions = sum((P[k] == 0 and P[k+1] == 1) for k in range(1, 8))
+                transitions += (P[8] == 0 and P[1] == 1)
+
+                if (
+                    2 <= neighbors <= 6 and
+                    transitions == 1 and
+                    P[1] * P[3] * P[5] == 0 and
+                    P[3] * P[5] * P[7] == 0
+                ):
+                    pixels_to_remove.append((i, j))
+
+        if pixels_to_remove:
+            changed = True
+            for i, j in pixels_to_remove:
+                img[i, j] = 0
+
+        pixels_to_remove = []
+
+        # sub-iteration 2
+        for i in range(1, img.shape[0] - 1):
+            for j in range(1, img.shape[1] - 1):
+                P = [
+                    img[i, j],
+                    img[i-1, j],
+                    img[i-1, j+1],
+                    img[i, j+1],
+                    img[i+1, j+1],
+                    img[i+1, j],
+                    img[i+1, j-1],
+                    img[i, j-1],
+                    img[i-1, j-1]
+                ]
+
+                if P[0] != 1:
+                    continue
+
+                neighbors = sum(P[1:])
+                transitions = sum((P[k] == 0 and P[k+1] == 1) for k in range(1, 8))
+                transitions += (P[8] == 0 and P[1] == 1)
+
+                if (
+                    2 <= neighbors <= 6 and
+                    transitions == 1 and
+                    P[1] * P[3] * P[7] == 0 and
+                    P[1] * P[5] * P[7] == 0
+                ):
+                    pixels_to_remove.append((i, j))
+
+        if pixels_to_remove:
+            changed = True
+            for i, j in pixels_to_remove:
+                img[i, j] = 0
+
+    return img
+
+
+skeleton = skeletonize(closed)
+
+# clean up
+
+def remove_small_components(binary_img, min_size=30):
+    img = binary_img.copy().astype(np.uint8)
+    H, W = img.shape
+    visited = np.zeros_like(img, dtype=bool)
+    output = np.zeros_like(img)
+
+    def get_neighbors(x, y):
+        neighbors = []
+        for dx in [-1, 0, 1]:
+            for dy in [-1, 0, 1]:
+                if dx == 0 and dy == 0:
+                    continue
+
+                nx = x + dx
+                ny = y + dy
+
+                if 0 <= nx < H and 0 <= ny < W:
+                    neighbors.append((nx, ny))
+
+        return neighbors
+
+    for i in range(H):
+        for j in range(W):
+            if img[i, j] == 1 and not visited[i, j]:
+                stack = [(i, j)]
+                component = []
+                visited[i, j] = True
+
+                while stack:
+                    x, y = stack.pop()
+                    component.append((x, y))
+
+                    for nx, ny in get_neighbors(x, y):
+                        if img[nx, ny] == 1 and not visited[nx, ny]:
+                            visited[nx, ny] = True
+                            stack.append((nx, ny))
+
+                if len(component) >= min_size:
+                    for x, y in component:
+                        output[x, y] = 1
+
+    return output
+
+
+clean_skeleton = remove_small_components(skeleton, min_size=75)
+
+
+
 # figures
+
+# plt.figure(figsize=(12, 8))
+
+# plt.subplot(2, 2, 1)
+# plt.title("Original")
+# plt.imshow(img)
+# plt.axis("off")
+
+# plt.subplot(2, 2, 2)
+# plt.title("Grayscale")
+# plt.imshow(gray, cmap="gray")
+# plt.axis("off")
+
+# plt.subplot(2, 2, 3)
+# plt.title("Gaussian Blur")
+# plt.imshow(blurred, cmap="gray")
+# plt.axis("off")
+
+# plt.subplot(2, 2, 4)
+# plt.title("Manual Canny Edges")
+# plt.imshow(edges, cmap="gray")
+# plt.axis("off")
+
+# plt.tight_layout()
+# plt.savefig("pipeline_output.png", dpi=300, bbox_inches='tight')
+# plt.show()
 
 plt.figure(figsize=(12, 8))
 
 plt.subplot(2, 2, 1)
-plt.title("Original")
-plt.imshow(img)
-plt.axis("off")
-
-plt.subplot(2, 2, 2)
-plt.title("Grayscale")
-plt.imshow(gray, cmap="gray")
-plt.axis("off")
-
-plt.subplot(2, 2, 3)
-plt.title("Gaussian Blur")
-plt.imshow(blurred, cmap="gray")
-plt.axis("off")
-
-plt.subplot(2, 2, 4)
 plt.title("Manual Canny Edges")
 plt.imshow(edges, cmap="gray")
 plt.axis("off")
 
+plt.subplot(2, 2, 2)
+plt.title("Morphological Closing")
+plt.imshow(closed, cmap="gray")
+plt.axis("off")
+
+plt.subplot(2, 2, 3)
+plt.title("Skeletonized")
+plt.imshow(skeleton, cmap="gray")
+plt.axis("off")
+
+plt.subplot(2, 2, 4)
+plt.title("Small Components Removed")
+plt.imshow(clean_skeleton, cmap="gray")
+plt.axis("off")
+
 plt.tight_layout()
-
-plt.savefig("pipeline_output.png", dpi=300, bbox_inches='tight')
-
+plt.savefig("pipeline_output.png", dpi=300, bbox_inches="tight")
 plt.show()
