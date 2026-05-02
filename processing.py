@@ -147,6 +147,93 @@ def hysteresis(img, weak=0.5, strong=1.0):
 
 edges = hysteresis(thresholded, weak, strong)
 
+# Additional edge detectors: Sobel (magnitude), Prewitt, Laplacian
+
+# Prewitt kernels
+Px = np.array([
+    [-1, 0, 1],
+    [-1, 0, 1],
+    [-1, 0, 1]
+], dtype=np.float32)
+
+Py = np.array([
+    [ 1,  1,  1],
+    [ 0,  0,  0],
+    [-1, -1, -1]
+], dtype=np.float32)
+
+def sobel_edge_map(image):
+    gx = convolve2d(image, Kx)
+    gy = convolve2d(image, Ky)
+    mag = np.sqrt(gx**2 + gy**2)
+    if mag.max() > 0:
+        mag = mag / mag.max()
+    return mag
+
+def prewitt_edge_map(image):
+    gx = convolve2d(image, Px)
+    gy = convolve2d(image, Py)
+    mag = np.sqrt(gx**2 + gy**2)
+    if mag.max() > 0:
+        mag = mag / mag.max()
+    return mag
+
+def laplacian_edge_map(image):
+    # 3x3 Laplacian kernel
+    L = np.array([
+        [0,  1, 0],
+        [1, -4, 1],
+        [0,  1, 0]
+    ], dtype=np.float32)
+
+    resp = convolve2d(image, L)
+    mag = np.abs(resp)
+    if mag.max() > 0:
+        mag = mag / mag.max()
+    return mag
+
+# compute maps on the blurred grayscale image for fair comparison
+sobel_map = sobel_edge_map(blurred)
+prewitt_map = prewitt_edge_map(blurred)
+laplacian_map = laplacian_edge_map(blurred)
+
+# binary thresholded maps for visual comparison
+def binary_from_mag(mag, thresh=0.2):
+    return (mag >= thresh).astype(np.float32)
+
+def otsu_threshold(image, nbins=256):
+    # image assumed normalized to [0,1]
+    img = (image * 255).astype(np.uint8)
+    hist, bin_edges = np.histogram(img.ravel(), bins=nbins, range=(0, 255))
+    total = img.size
+
+    current_max, threshold = 0, 0
+    sum_total = np.dot(np.arange(nbins), hist)
+    sumB = 0
+    wB = 0
+
+    for i in range(nbins):
+        wB += hist[i]
+        if wB == 0:
+            continue
+        wF = total - wB
+        if wF == 0:
+            break
+        sumB += i * hist[i]
+        mB = sumB / wB
+        mF = (sum_total - sumB) / wF
+        # between class variance
+        varBetween = wB * wF * (mB - mF) ** 2
+        if varBetween > current_max:
+            current_max = varBetween
+            threshold = i
+
+    return threshold / 255.0
+
+sobel_bin = binary_from_mag(sobel_map, thresh=0.2)
+prewitt_bin = binary_from_mag(prewitt_map, thresh=0.2)
+laplacian_bin = binary_from_mag(laplacian_map, thresh=0.12)
+
 # Morphological Closing
 
 def dilate(binary_img, kernel_size=3):
@@ -370,4 +457,94 @@ plt.axis("off")
 
 plt.tight_layout()
 plt.savefig("pipeline_output.png", dpi=300, bbox_inches="tight")
+plt.show()
+
+# Comparison figure for different edge detectors
+plt.figure(figsize=(10, 8))
+
+plt.subplot(2, 2, 1)
+plt.title("Canny (manual)")
+plt.imshow(edges, cmap="gray")
+plt.axis("off")
+
+plt.subplot(2, 2, 2)
+plt.title("Sobel (binary)")
+plt.imshow(sobel_bin, cmap="gray")
+plt.axis("off")
+
+plt.subplot(2, 2, 3)
+plt.title("Prewitt (binary)")
+plt.imshow(prewitt_bin, cmap="gray")
+plt.axis("off")
+
+plt.subplot(2, 2, 4)
+plt.title("Laplacian (binary)")
+plt.imshow(laplacian_bin, cmap="gray")
+plt.axis("off")
+
+plt.tight_layout()
+plt.savefig("edge_comparison.png", dpi=300, bbox_inches="tight")
+plt.show()
+
+# Compute Otsu thresholds for Sobel/Prewitt/Laplacian and show continuous maps
+sobel_otsu_t = otsu_threshold(sobel_map)
+prewitt_otsu_t = otsu_threshold(prewitt_map)
+laplacian_otsu_t = otsu_threshold(laplacian_map)
+
+print(f"Otsu thresholds -> Sobel: {sobel_otsu_t:.3f}, Prewitt: {prewitt_otsu_t:.3f}, Laplacian: {laplacian_otsu_t:.3f}")
+
+sobel_otsu = binary_from_mag(sobel_map, thresh=sobel_otsu_t)
+prewitt_otsu = binary_from_mag(prewitt_map, thresh=prewitt_otsu_t)
+laplacian_otsu = binary_from_mag(laplacian_map, thresh=laplacian_otsu_t)
+
+# Continuous magnitude comparison
+plt.figure(figsize=(10, 8))
+plt.subplot(2, 2, 1)
+plt.title("Gradient Magnitude (Canny - pre-NMS)")
+plt.imshow(magnitude, cmap="gray")
+plt.axis("off")
+
+plt.subplot(2, 2, 2)
+plt.title("Sobel Magnitude (continuous)")
+plt.imshow(sobel_map, cmap="gray")
+plt.axis("off")
+
+plt.subplot(2, 2, 3)
+plt.title("Prewitt Magnitude (continuous)")
+plt.imshow(prewitt_map, cmap="gray")
+plt.axis("off")
+
+plt.subplot(2, 2, 4)
+plt.title("Laplacian Response (continuous)")
+plt.imshow(laplacian_map, cmap="gray")
+plt.axis("off")
+
+plt.tight_layout()
+plt.savefig("edge_continuous.png", dpi=300, bbox_inches="tight")
+plt.show()
+
+# Binary comparison using Otsu thresholds
+plt.figure(figsize=(10, 8))
+plt.subplot(2, 2, 1)
+plt.title("Canny (manual)")
+plt.imshow(edges, cmap="gray")
+plt.axis("off")
+
+plt.subplot(2, 2, 2)
+plt.title(f"Sobel (Otsu t={sobel_otsu_t:.2f})")
+plt.imshow(sobel_otsu, cmap="gray")
+plt.axis("off")
+
+plt.subplot(2, 2, 3)
+plt.title(f"Prewitt (Otsu t={prewitt_otsu_t:.2f})")
+plt.imshow(prewitt_otsu, cmap="gray")
+plt.axis("off")
+
+plt.subplot(2, 2, 4)
+plt.title(f"Laplacian (Otsu t={laplacian_otsu_t:.2f})")
+plt.imshow(laplacian_otsu, cmap="gray")
+plt.axis("off")
+
+plt.tight_layout()
+plt.savefig("edge_binary_otsu.png", dpi=300, bbox_inches="tight")
 plt.show()
